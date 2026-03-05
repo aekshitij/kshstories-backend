@@ -4,44 +4,79 @@ const dotenv = require('dotenv');
 const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// ================== MIDDLEWARE ==================
+
+// CORS Configuration
+const corsOptions = {
+    origin: [
+        process.env.FRONTEND_URL || 'http://localhost:3000',
+        'http://localhost:3000',
+        'http://localhost:5000',
+        'https://localhost:3000'
+    ],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+};
+
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(express.static('public'));
 
-// File upload setup
+// ================== FILE UPLOAD SETUP ==================
+
+if (!fs.existsSync('uploads')) {
+    fs.mkdirSync('uploads');
+}
+
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, 'uploads/');
     },
     filename: (req, file, cb) => {
-        cb(null, Date.now() + path.extname(file.originalname));
+        cb(null, Date.now() + '-' + file.originalname);
     }
 });
-const upload = multer({ storage });
 
-// MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/kshstories', {
+const upload = multer({
+    storage,
+    limits: { fileSize: 50 * 1024 * 1024 }
+});
+
+app.use('/uploads', express.static('uploads'));
+
+// ================== MONGODB CONNECTION ==================
+
+const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/kshstories';
+
+mongoose.connect(mongoUri, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
 })
-.then(() => console.log('MongoDB connected'))
-.catch(err => console.error('MongoDB connection error:', err));
+.then(() => {
+    console.log('✅ MongoDB connected successfully');
+    console.log('Database:', mongoose.connection.name);
+})
+.catch(err => {
+    console.error('❌ MongoDB connection error:', err.message);
+    process.exit(1);
+});
 
 // ================== SCHEMAS ==================
 
 // User Schema
 const userSchema = new mongoose.Schema({
     name: String,
-    email: { type: String, unique: true },
-    password: String, // In production, use bcrypt
+    email: { type: String, unique: true, sparse: true },
+    password: String,
     role: { type: String, enum: ['reader', 'subscriber', 'admin'], default: 'reader' },
     purchasedBooks: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Book' }],
     preferredLanguage: { type: String, default: 'en' },
@@ -67,9 +102,9 @@ const User = mongoose.model('User', userSchema);
 
 // Book Schema
 const bookSchema = new mongoose.Schema({
-    title: String,
-    titleHi: String, // Hindi title
-    author: String,
+    title: { type: String, required: true },
+    titleHi: String,
+    author: { type: String, required: true },
     description: String,
     descriptionHi: String,
     cover: String,
@@ -108,9 +143,9 @@ const Book = mongoose.model('Book', bookSchema);
 
 // Poem Schema
 const poemSchema = new mongoose.Schema({
-    title: String,
+    title: { type: String, required: true },
     titleHi: String,
-    content: String,
+    content: { type: String, required: true },
     contentHi: String,
     category: { type: String, enum: ['love', 'longing', 'silence', 'healing', 'nostalgia'] },
     author: String,
@@ -124,7 +159,7 @@ const Poem = mongoose.model('Poem', poemSchema);
 
 // Quote Schema
 const quoteSchema = new mongoose.Schema({
-    text: String,
+    text: { type: String, required: true },
     textHi: String,
     author: String,
     category: String,
@@ -138,9 +173,9 @@ const Quote = mongoose.model('Quote', quoteSchema);
 
 // Blog Post Schema
 const blogSchema = new mongoose.Schema({
-    title: String,
+    title: { type: String, required: true },
     titleHi: String,
-    content: String,
+    content: { type: String, required: true },
     contentHi: String,
     excerpt: String,
     excerptHi: String,
@@ -154,7 +189,7 @@ const blogSchema = new mongoose.Schema({
 
 const BlogPost = mongoose.model('BlogPost', blogSchema);
 
-// Purchase/Order Schema
+// Order Schema
 const orderSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     bookId: { type: mongoose.Schema.Types.ObjectId, ref: 'Book' },
@@ -163,7 +198,7 @@ const orderSchema = new mongoose.Schema({
     paymentMethod: String,
     paymentStatus: { type: String, enum: ['pending', 'completed', 'failed'], default: 'pending' },
     transactionId: String,
-    languageReceived: String, // 'en', 'hi', or 'both'
+    languageReceived: String,
     createdAt: { type: Date, default: Date.now }
 });
 
@@ -171,51 +206,82 @@ const Order = mongoose.model('Order', orderSchema);
 
 // Newsletter Subscriber Schema
 const subscriberSchema = new mongoose.Schema({
-    email: { type: String, unique: true },
+    email: { type: String, unique: true, required: true, sparse: true },
     subscribedAt: { type: Date, default: Date.now }
 });
 
 const Subscriber = mongoose.model('Subscriber', subscriberSchema);
 
+// ================== HEALTH CHECK ==================
+
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        status: 'OK',
+        timestamp: new Date(),
+        uptime: process.uptime(),
+        mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'
+    });
+});
+
+app.get('/', (req, res) => {
+    res.json({
+        message: 'KSHstories Backend API ✨',
+        version: '1.0.0',
+        status: 'Running',
+        endpoints: {
+            books: '/api/books',
+            poems: '/api/poems',
+            quotes: '/api/quotes',
+            blog: '/api/blog',
+            users: '/api/users',
+            orders: '/api/orders',
+            newsletter: '/api/newsletter'
+        }
+    });
+});
+
 // ================== API ROUTES ==================
 
 // 1. USER ROUTES
 
-// Register User
 app.post('/api/users/register', async (req, res) => {
     try {
         const { name, email, password } = req.body;
+        if (!email || !password) {
+            return res.status(400).json({ success: false, error: 'Email and password required' });
+        }
         const user = new User({ name, email, password });
         await user.save();
         res.status(201).json({ success: true, message: 'User registered', userId: user._id });
     } catch (error) {
+        if (error.code === 11000) {
+            return res.status(400).json({ success: false, error: 'Email already exists' });
+        }
         res.status(400).json({ success: false, error: error.message });
     }
 });
 
-// Login User
 app.post('/api/users/login', async (req, res) => {
     try {
         const { email, password } = req.body;
         const user = await User.findOne({ email, password });
         if (!user) return res.status(401).json({ success: false, error: 'Invalid credentials' });
-        res.json({ success: true, userId: user._id, email: user.email });
+        res.json({ success: true, userId: user._id, email: user.email, role: user.role });
     } catch (error) {
         res.status(400).json({ success: false, error: error.message });
     }
 });
 
-// Get User Profile
 app.get('/api/users/:userId', async (req, res) => {
     try {
         const user = await User.findById(req.params.userId).populate('purchasedBooks');
+        if (!user) return res.status(404).json({ error: 'User not found' });
         res.json(user);
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
 });
 
-// Update User Preferred Language
 app.put('/api/users/:userId/language', async (req, res) => {
     try {
         const { language } = req.body;
@@ -228,7 +294,6 @@ app.put('/api/users/:userId/language', async (req, res) => {
 
 // 2. BOOK ROUTES
 
-// Get All Books
 app.get('/api/books', async (req, res) => {
     try {
         const books = await Book.find();
@@ -238,30 +303,30 @@ app.get('/api/books', async (req, res) => {
     }
 });
 
-// Get Single Book
 app.get('/api/books/:bookId', async (req, res) => {
     try {
         const book = await Book.findById(req.params.bookId);
+        if (!book) return res.status(404).json({ error: 'Book not found' });
         res.json(book);
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
 });
 
-// Get Book Chapters
 app.get('/api/books/:bookId/chapters', async (req, res) => {
     try {
         const book = await Book.findById(req.params.bookId);
+        if (!book) return res.status(404).json({ error: 'Book not found' });
         res.json(book.chapters);
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
 });
 
-// Get Specific Chapter
 app.get('/api/books/:bookId/chapters/:chapterNumber', async (req, res) => {
     try {
         const book = await Book.findById(req.params.bookId);
+        if (!book) return res.status(404).json({ error: 'Book not found' });
         const chapter = book.chapters.find(c => c.number === parseInt(req.params.chapterNumber));
         if (!chapter) return res.status(404).json({ error: 'Chapter not found' });
         res.json(chapter);
@@ -270,65 +335,8 @@ app.get('/api/books/:bookId/chapters/:chapterNumber', async (req, res) => {
     }
 });
 
-// Create Book (Admin)
-app.post('/api/books', async (req, res) => {
-    try {
-        const book = new Book(req.body);
-        await book.save();
-        res.status(201).json({ success: true, bookId: book._id });
-    } catch (error) {
-        res.status(400).json({ success: false, error: error.message });
-    }
-});
+// 3. POEM ROUTES
 
-// Add Chapter to Book
-app.post('/api/books/:bookId/chapters', async (req, res) => {
-    try {
-        const book = await Book.findById(req.params.bookId);
-        book.chapters.push(req.body);
-        await book.save();
-        res.json({ success: true, chapter: req.body });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
-// Update Reading Progress
-app.put('/api/users/:userId/progress/:bookId', async (req, res) => {
-    try {
-        const { chapter, progress } = req.body;
-        const user = await User.findById(req.params.userId);
-        const existingProgress = user.readingProgress.find(p => p.bookId.toString() === req.params.bookId);
-        
-        if (existingProgress) {
-            existingProgress.chapter = chapter;
-            existingProgress.progress = progress;
-        } else {
-            user.readingProgress.push({ bookId: req.params.bookId, chapter, progress });
-        }
-        
-        await user.save();
-        res.json({ success: true });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
-// Add Bookmark
-app.post('/api/users/:userId/bookmarks', async (req, res) => {
-    try {
-        const user = await User.findById(req.params.userId);
-        user.bookmarks.push(req.body);
-        await user.save();
-        res.json({ success: true });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
-// 3. POETRY ROUTES
-
-// Get All Poems
 app.get('/api/poems', async (req, res) => {
     try {
         const poems = await Poem.find();
@@ -338,7 +346,6 @@ app.get('/api/poems', async (req, res) => {
     }
 });
 
-// Get Poems by Category
 app.get('/api/poems/category/:category', async (req, res) => {
     try {
         const poems = await Poem.find({ category: req.params.category });
@@ -348,7 +355,16 @@ app.get('/api/poems/category/:category', async (req, res) => {
     }
 });
 
-// Create Poem (Admin)
+app.get('/api/poems/:poemId', async (req, res) => {
+    try {
+        const poem = await Poem.findByIdAndUpdate(req.params.poemId, { $inc: { views: 1 } }, { new: true });
+        if (!poem) return res.status(404).json({ error: 'Poem not found' });
+        res.json(poem);
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
 app.post('/api/poems', async (req, res) => {
     try {
         const poem = new Poem(req.body);
@@ -359,17 +375,6 @@ app.post('/api/poems', async (req, res) => {
     }
 });
 
-// Increment Poem Views
-app.put('/api/poems/:poemId/view', async (req, res) => {
-    try {
-        const poem = await Poem.findByIdAndUpdate(req.params.poemId, { $inc: { views: 1 } }, { new: true });
-        res.json(poem);
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
-// Like Poem
 app.put('/api/poems/:poemId/like', async (req, res) => {
     try {
         const poem = await Poem.findByIdAndUpdate(req.params.poemId, { $inc: { likes: 1 } }, { new: true });
@@ -381,7 +386,6 @@ app.put('/api/poems/:poemId/like', async (req, res) => {
 
 // 4. QUOTES ROUTES
 
-// Get All Quotes
 app.get('/api/quotes', async (req, res) => {
     try {
         const quotes = await Quote.find();
@@ -391,17 +395,16 @@ app.get('/api/quotes', async (req, res) => {
     }
 });
 
-// Get Quote of the Week
 app.get('/api/quotes/special/week', async (req, res) => {
     try {
         const quote = await Quote.findOne().sort({ createdAt: -1 });
+        if (!quote) return res.status(404).json({ error: 'No quotes found' });
         res.json(quote);
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
 });
 
-// Create Quote (Admin)
 app.post('/api/quotes', async (req, res) => {
     try {
         const quote = new Quote(req.body);
@@ -412,7 +415,6 @@ app.post('/api/quotes', async (req, res) => {
     }
 });
 
-// Share Quote
 app.put('/api/quotes/:quoteId/share', async (req, res) => {
     try {
         const quote = await Quote.findByIdAndUpdate(req.params.quoteId, { $inc: { shares: 1 } }, { new: true });
@@ -424,7 +426,6 @@ app.put('/api/quotes/:quoteId/share', async (req, res) => {
 
 // 5. BLOG ROUTES
 
-// Get All Blog Posts
 app.get('/api/blog', async (req, res) => {
     try {
         const posts = await BlogPost.find().sort({ publishedDate: -1 });
@@ -434,7 +435,6 @@ app.get('/api/blog', async (req, res) => {
     }
 });
 
-// Get Single Blog Post
 app.get('/api/blog/:postId', async (req, res) => {
     try {
         const post = await BlogPost.findByIdAndUpdate(
@@ -442,13 +442,13 @@ app.get('/api/blog/:postId', async (req, res) => {
             { $inc: { views: 1 } },
             { new: true }
         );
+        if (!post) return res.status(404).json({ error: 'Blog post not found' });
         res.json(post);
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
 });
 
-// Create Blog Post (Admin)
 app.post('/api/blog', async (req, res) => {
     try {
         const post = new BlogPost(req.body);
@@ -461,7 +461,6 @@ app.post('/api/blog', async (req, res) => {
 
 // 6. PURCHASE/ORDER ROUTES
 
-// Create Order
 app.post('/api/orders', async (req, res) => {
     try {
         const order = new Order(req.body);
@@ -472,16 +471,16 @@ app.post('/api/orders', async (req, res) => {
     }
 });
 
-// Confirm Payment
 app.put('/api/orders/:orderId/confirm', async (req, res) => {
     try {
         const order = await Order.findByIdAndUpdate(req.params.orderId, { paymentStatus: 'completed' }, { new: true });
         
-        // Add book to user's purchased books
-        const user = await User.findById(order.userId);
-        if (!user.purchasedBooks.includes(order.bookId)) {
-            user.purchasedBooks.push(order.bookId);
-            await user.save();
+        if (order.userId) {
+            const user = await User.findById(order.userId);
+            if (user && !user.purchasedBooks.includes(order.bookId)) {
+                user.purchasedBooks.push(order.bookId);
+                await user.save();
+            }
         }
         
         res.json({ success: true, order });
@@ -490,7 +489,6 @@ app.put('/api/orders/:orderId/confirm', async (req, res) => {
     }
 });
 
-// Get User Orders
 app.get('/api/users/:userId/orders', async (req, res) => {
     try {
         const orders = await Order.find({ userId: req.params.userId }).populate('bookId');
@@ -502,10 +500,12 @@ app.get('/api/users/:userId/orders', async (req, res) => {
 
 // 7. NEWSLETTER ROUTES
 
-// Subscribe to Newsletter
 app.post('/api/newsletter/subscribe', async (req, res) => {
     try {
         const { email } = req.body;
+        if (!email) {
+            return res.status(400).json({ success: false, error: 'Email required' });
+        }
         const subscriber = new Subscriber({ email });
         await subscriber.save();
         res.status(201).json({ success: true, message: 'Subscribed successfully' });
@@ -517,7 +517,6 @@ app.post('/api/newsletter/subscribe', async (req, res) => {
     }
 });
 
-// Get Subscribers (Admin)
 app.get('/api/newsletter/subscribers', async (req, res) => {
     try {
         const subscribers = await Subscriber.find();
@@ -527,12 +526,13 @@ app.get('/api/newsletter/subscribers', async (req, res) => {
     }
 });
 
-// 8. LANGUAGE/BILINGUAL ROUTES
+// 8. BILINGUAL ROUTES
 
-// Get Bilingual Book (EN + HI)
 app.get('/api/books/:bookId/bilingual', async (req, res) => {
     try {
         const book = await Book.findById(req.params.bookId);
+        if (!book) return res.status(404).json({ error: 'Book not found' });
+        
         const bilingualBook = {
             en: {
                 title: book.title,
@@ -559,50 +559,38 @@ app.get('/api/books/:bookId/bilingual', async (req, res) => {
     }
 });
 
-// ================== FILE UPLOAD ROUTE ==================
+// 9. FILE UPLOAD ROUTES
 
-// Upload Book Cover
 app.post('/api/upload/cover', upload.single('cover'), (req, res) => {
     try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
         res.json({ success: true, filename: req.file.filename, url: `/uploads/${req.file.filename}` });
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
 });
 
-// Upload PDF
 app.post('/api/upload/pdf', upload.single('pdf'), (req, res) => {
     try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
         res.json({ success: true, filename: req.file.filename, url: `/uploads/${req.file.filename}` });
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
 });
 
-// ================== SEARCH ROUTE ==================
+// 10. ADMIN ANALYTICS
 
-// Search Books, Poems, Quotes, Blog Posts
-app.get('/api/search', async (req, res) => {
-    try {
-        const query = req.query.q;
-        const books = await Book.find({ $text: { $search: query } });
-        const poems = await Poem.find({ $text: { $search: query } });
-        const quotes = await Quote.find({ $text: { $search: query } });
-        const posts = await BlogPost.find({ $text: { $search: query } });
-        
-        res.json({ books, poems, quotes, posts });
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
-});
-
-// ================== ADMIN ANALYTICS ==================
-
-// Get Dashboard Stats
 app.get('/api/admin/stats', async (req, res) => {
     try {
         const totalUsers = await User.countDocuments();
         const totalBooks = await Book.countDocuments();
+        const totalPoems = await Poem.countDocuments();
+        const totalQuotes = await Quote.countDocuments();
         const totalOrders = await Order.countDocuments();
         const totalRevenue = await Order.aggregate([
             { $match: { paymentStatus: 'completed' } },
@@ -612,6 +600,8 @@ app.get('/api/admin/stats', async (req, res) => {
         res.json({
             totalUsers,
             totalBooks,
+            totalPoems,
+            totalQuotes,
             totalOrders,
             totalRevenue: totalRevenue[0]?.total || 0
         });
@@ -623,15 +613,35 @@ app.get('/api/admin/stats', async (req, res) => {
 // ================== ERROR HANDLING ==================
 
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ success: false, error: 'Something went wrong' });
+    console.error('Error:', err);
+    res.status(500).json({
+        success: false,
+        error: process.env.NODE_ENV === 'production' ? 'Something went wrong' : err.message
+    });
+});
+
+app.use((req, res) => {
+    res.status(404).json({
+        success: false,
+        error: 'Route not found',
+        availableRoutes: [
+            'GET /api/books',
+            'GET /api/poems',
+            'GET /api/quotes',
+            'GET /api/blog',
+            'POST /api/newsletter/subscribe'
+        ]
+    });
 });
 
 // ================== START SERVER ==================
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-    console.log(`KSHstories server running on port ${PORT}`);
+    console.log(`\n🚀 KSHstories server running on port ${PORT}`);
+    console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`📚 API Base: http://localhost:${PORT}/api`);
+    console.log(`💾 Database: ${mongoose.connection.name}\n`);
 });
 
 module.exports = app;
