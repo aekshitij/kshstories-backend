@@ -473,21 +473,13 @@ app.get('/admin', (req, res) => {
 app.post('/api/admin/login', (req, res) => {
     try {
         const { key } = req.body;
-        const ADMIN_KEY = process.env.ADMIN_KEY;
-
-if (!ADMIN_KEY) {
-    console.error('❌ ADMIN_KEY not set in environment variables!');
-    process.exit(1);
-}
-
-        if (!key) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Admin key is required' 
-            });
-        }
-
-        if (key === ADMIN_KEY) {
+        
+        // Direct check
+        console.log('Received key:', key);
+        console.log('ENV ADMIN_KEY:', process.env.ADMIN_KEY);
+        
+        // Check directly with 'kshitij77'
+        if (key === 'kshitij77' || key === process.env.ADMIN_KEY) {
             return res.json({ 
                 success: true, 
                 message: 'Login successful',
@@ -496,14 +488,19 @@ if (!ADMIN_KEY) {
         } else {
             return res.status(403).json({ 
                 success: false, 
-                error: 'Invalid admin key' 
+                error: 'Invalid admin key',
+                received: key,
+                expected: process.env.ADMIN_KEY
             });
         }
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        console.error('Login error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message
+        });
     }
 });
-
 // ADD BOOK
 app.post('/api/admin/books', adminAuth, async (req, res) => {
     try {
