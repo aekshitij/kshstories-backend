@@ -473,7 +473,12 @@ app.get('/admin', (req, res) => {
 app.post('/api/admin/login', (req, res) => {
     try {
         const { key } = req.body;
-        const ADMIN_KEY = process.env.ADMIN_KEY || 'admin_kshitij77_change_this_value';
+        const ADMIN_KEY = process.env.ADMIN_KEY;
+
+if (!ADMIN_KEY) {
+    console.error('❌ ADMIN_KEY not set in environment variables!');
+    process.exit(1);
+}
 
         if (!key) {
             return res.status(400).json({ 
