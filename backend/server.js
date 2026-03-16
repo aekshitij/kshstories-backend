@@ -1,6 +1,6 @@
 // ============================================================================
-// KSHSTORIES - Complete Express Server
-// WITH INLINE ADMIN PANEL HTML - NO FILE DEPENDENCY
+// KSHSTORIES - Complete Express Server (FINAL - PRODUCTION READY)
+// Admin Panel + API + Database - All Working!
 // ============================================================================
 
 const express = require('express');
@@ -47,7 +47,7 @@ try {
 }
 
 // ============================================================================
-// DATABASE
+// DATABASE CONNECTION
 // ============================================================================
 
 if (process.env.MONGODB_URI) {
@@ -62,7 +62,7 @@ if (process.env.MONGODB_URI) {
 }
 
 // ============================================================================
-// MODELS
+// MODELS IMPORT
 // ============================================================================
 
 let Book, Poetry, Quote, Blog;
@@ -72,8 +72,9 @@ try {
     Poetry = require('./models/Poetry');
     Quote = require('./models/Quote');
     Blog = require('./models/Blog');
+    console.log('✓ All models loaded');
 } catch (err) {
-    console.warn('⚠️ Some models not found');
+    console.warn('⚠️ Some models not found - they can be created later');
 }
 
 // ============================================================================
@@ -93,7 +94,15 @@ const adminAuth = (req, res, next) => {
         });
     }
 
-    const ADMIN_KEY = process.env.ADMIN_KEY || 'admin_kshitij77_change_this_value';
+    const ADMIN_KEY = process.env.ADMIN_KEY;
+    
+    if (!ADMIN_KEY) {
+        console.error('❌ ADMIN_KEY not configured in environment!');
+        return res.status(500).json({ 
+            success: false, 
+            error: 'Server configuration error - ADMIN_KEY missing'
+        });
+    }
     
     if (adminKey !== ADMIN_KEY) {
         return res.status(403).json({ 
@@ -106,7 +115,7 @@ const adminAuth = (req, res, next) => {
 };
 
 // ============================================================================
-// ROUTES - ROOT & BASIC
+// ROUTES - ROOT & HEALTH
 // ============================================================================
 
 app.get('/', (req, res) => {
@@ -188,10 +197,8 @@ app.get('/admin', (req, res) => {
         <h1>🎭 KSHSTORIES Admin Panel</h1>
         <p>Manage Your Content Securely</p>
     </div>
-    
     <div id="successMsg" class="message success"></div>
     <div id="errorMsg" class="message error"></div>
-    
     <div class="tabs">
         <button class="tab-btn active" data-tab="login">🔐 Login</button>
         <button class="tab-btn" data-tab="books">📚 Add Book</button>
@@ -200,7 +207,6 @@ app.get('/admin', (req, res) => {
         <button class="tab-btn" data-tab="blog">📝 Add Blog</button>
         <button class="tab-btn btn-logout" onclick="logout()" style="border: none; padding: 10px 20px; margin-left: auto;">Logout</button>
     </div>
-
     <div class="tab-content active" id="login">
         <h2 style="margin-bottom: 20px;">Admin Login</h2>
         <div class="info-box">
@@ -213,7 +219,6 @@ app.get('/admin', (req, res) => {
         </div>
         <button class="btn" onclick="adminLogin()">Login</button>
     </div>
-
     <div class="tab-content" id="books">
         <h2 style="margin-bottom: 20px;">📚 Add Book</h2>
         <div class="form-group">
@@ -242,7 +247,6 @@ app.get('/admin', (req, res) => {
         </div>
         <button class="btn" onclick="addBook()">➕ Add Book</button>
     </div>
-
     <div class="tab-content" id="poetry">
         <h2 style="margin-bottom: 20px;">✍️ Add Poetry</h2>
         <div class="form-group">
@@ -266,7 +270,6 @@ app.get('/admin', (req, res) => {
         </div>
         <button class="btn" onclick="addPoem()">➕ Add Poem</button>
     </div>
-
     <div class="tab-content" id="quotes">
         <h2 style="margin-bottom: 20px;">💭 Add Quote</h2>
         <div class="form-group">
@@ -279,7 +282,6 @@ app.get('/admin', (req, res) => {
         </div>
         <button class="btn" onclick="addQuote()">➕ Add Quote</button>
     </div>
-
     <div class="tab-content" id="blog">
         <h2 style="margin-bottom: 20px;">📝 Add Blog</h2>
         <div class="form-group">
@@ -297,14 +299,11 @@ app.get('/admin', (req, res) => {
         <button class="btn" onclick="addBlog()">📤 Publish</button>
     </div>
 </div>
-
 <script>
     const API_BASE = window.location.origin;
     let adminKey = '';
     let isLoggedIn = false;
-    
-    console.log('Admin Panel Ready');
-    
+    console.log('Admin Panel Ready on:', API_BASE);
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const tab = e.target.dataset.tab;
@@ -320,14 +319,12 @@ app.get('/admin', (req, res) => {
             }
         });
     });
-    
     function adminLogin() {
         const key = document.getElementById('adminKey').value.trim();
         if (!key) {
             showError('❌ Please enter admin key');
             return;
         }
-        
         fetch(API_BASE + '/api/admin/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -345,12 +342,11 @@ app.get('/admin', (req, res) => {
                     document.querySelectorAll('[data-tab="books"]')[0].classList.add('active');
                 }, 500);
             } else {
-                showError('❌ Invalid admin key!');
+                showError('❌ ' + (data.error || 'Invalid admin key!'));
             }
         })
         .catch(err => showError('❌ Error: ' + err.message));
     }
-    
     function logout() {
         adminKey = '';
         isLoggedIn = false;
@@ -363,27 +359,23 @@ app.get('/admin', (req, res) => {
             document.querySelectorAll('[data-tab="login"]')[0].classList.add('active');
         }, 500);
     }
-    
     function showSuccess(msg) {
         const el = document.getElementById('successMsg');
         el.textContent = msg;
         el.classList.add('show');
         setTimeout(() => el.classList.remove('show'), 4000);
     }
-    
     function showError(msg) {
         const el = document.getElementById('errorMsg');
         el.textContent = msg;
         el.classList.add('show');
         setTimeout(() => el.classList.remove('show'), 5000);
     }
-    
     async function sendRequest(endpoint, data) {
         if (!adminKey) {
             showError('❌ Not logged in');
             return;
         }
-        
         try {
             const response = await fetch(API_BASE + endpoint, {
                 method: 'POST',
@@ -393,9 +385,7 @@ app.get('/admin', (req, res) => {
                 },
                 body: JSON.stringify(data)
             });
-            
             const result = await response.json().catch(() => ({ error: 'Invalid response' }));
-            
             if (response.ok && result.success) {
                 showSuccess('✅ Added successfully!');
                 document.querySelectorAll('input:not([type="password"]), textarea').forEach(el => el.value = '');
@@ -407,7 +397,6 @@ app.get('/admin', (req, res) => {
             console.error(error);
         }
     }
-    
     function addBook() {
         const title = document.getElementById('bookTitle').value.trim();
         const desc = document.getElementById('bookDescription').value.trim();
@@ -422,7 +411,6 @@ app.get('/admin', (req, res) => {
             language: document.getElementById('bookLanguage').value
         });
     }
-    
     function addPoem() {
         const title = document.getElementById('poemTitle').value.trim();
         const content = document.getElementById('poemContent').value.trim();
@@ -435,7 +423,6 @@ app.get('/admin', (req, res) => {
             category: document.getElementById('poemCategory').value
         });
     }
-    
     function addQuote() {
         const text = document.getElementById('quoteText').value.trim();
         if (!text) {
@@ -447,7 +434,6 @@ app.get('/admin', (req, res) => {
             author: document.getElementById('quoteAuthor').value
         });
     }
-    
     function addBlog() {
         const title = document.getElementById('blogTitle').value.trim();
         const content = document.getElementById('blogContent').value.trim();
@@ -473,13 +459,24 @@ app.get('/admin', (req, res) => {
 app.post('/api/admin/login', (req, res) => {
     try {
         const { key } = req.body;
-        
-        // Direct check
-        console.log('Received key:', key);
-        console.log('ENV ADMIN_KEY:', process.env.ADMIN_KEY);
-        
-        // Check directly with 'kshitij77'
-        if (key === 'kshitij77' || key === process.env.ADMIN_KEY) {
+        const ADMIN_KEY = process.env.ADMIN_KEY;
+
+        if (!key) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Admin key is required' 
+            });
+        }
+
+        if (!ADMIN_KEY) {
+            console.error('❌ ADMIN_KEY not configured in environment!');
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Server configuration error - ADMIN_KEY missing'
+            });
+        }
+
+        if (key === ADMIN_KEY) {
             return res.json({ 
                 success: true, 
                 message: 'Login successful',
@@ -488,9 +485,7 @@ app.post('/api/admin/login', (req, res) => {
         } else {
             return res.status(403).json({ 
                 success: false, 
-                error: 'Invalid admin key',
-                received: key,
-                expected: process.env.ADMIN_KEY
+                error: 'Invalid admin key' 
             });
         }
     } catch (error) {
@@ -501,6 +496,7 @@ app.post('/api/admin/login', (req, res) => {
         });
     }
 });
+
 // ADD BOOK
 app.post('/api/admin/books', adminAuth, async (req, res) => {
     try {
@@ -732,10 +728,14 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5001;
 
 app.listen(PORT, () => {
-    console.log('\n✅ KSHSTORIES Server Running');
+    console.log('\n╔════════════════════════════════════════╗');
+    console.log('║     ✅ KSHSTORIES Server Running      ║');
+    console.log('╚════════════════════════════════════════╝\n');
     console.log(`📍 Port: ${PORT}`);
     console.log(`🔗 Admin Panel: http://localhost:${PORT}/admin`);
-    console.log(`📡 API Base: http://localhost:${PORT}/api\n`);
+    console.log(`📡 API Base: http://localhost:${PORT}/api`);
+    console.log(`⚙️  Environment: ${process.env.NODE_ENV}`);
+    console.log(`🔐 Admin Key Configured: ${process.env.ADMIN_KEY ? '✓ Yes' : '✗ No'}\n`);
 });
 
 module.exports = app;
